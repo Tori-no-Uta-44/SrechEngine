@@ -1,0 +1,106 @@
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# Ignore build directories
+/build/
+/debug/
+/release/
+/bin/
+/cmake-build-*/
+
+# Ignore IDE/editor files
+.vscode/
+/.idea/
+*.code-workspace
+*.user
+*.sln
+*.ncb
+*.suo
+*.plg
+*.aps
+*.userosscache
+*.sln.docstates
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+CMakeScripts/
+
+# Ignore logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*.old
+*.pid
+*.seed
+*.orig
+*.rej
+*.patch
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore package manager files
+conanbuildinfo.txt
+conaninfo.txt
+graph_info.json
+
+# Ignore Clangd generated files
+.clangd/
