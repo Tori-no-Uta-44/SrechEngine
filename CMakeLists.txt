@@ -72,4 +72,5 @@ target_link_libraries(SearchEngine
         snappy
         crypt
         ${SRPC_LIBRARY}
+        ${Protobuf_LIBRARIES}
 )
