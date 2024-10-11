@@ -50,7 +50,16 @@ link_directories(
 # 添加可执行文件并列出所有源文件
 add_executable(SearchEngine
         main.cpp
-        # 其他源文件
+        include/SplitTool.h
+        include/func.h
+        src/DictProducer.cpp
+        include/DictProducer.h
+        include/Configuration.h
+        include/CppJieba.h
+        src/PageLib.cpp
+        include/PageLib.h
+        include/DirScanner.cpp
+        include/DirScanner.h
 )
 
 # 链接库到可执行文件
