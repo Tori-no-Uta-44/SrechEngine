@@ -58,8 +58,24 @@ add_executable(SearchEngine
         include/CppJieba.h
         src/PageLib.cpp
         include/PageLib.h
-        include/DirScanner.cpp
+        src/DirScanner.cpp
         include/DirScanner.h
+        src/CppJieba.cpp
+        src/Configuration.cpp
+        include/tinyxml2.h
+        include/tinyxml2.cpp
+        include/WebPage.h
+        src/WebPage.cpp
+        include/PageLibPreprocessor.h
+        src/PageLibPreprocessor.cpp
+        include/Dictionary.h
+        src/Dictionary.cpp
+        include/KeyRecommander.h
+        src/KeyRecommander.cpp
+        include/SearchEngineServer.h
+        src/SearchEngineServer.cpp
+        include/WebPageQuery.h
+        src/WebPageQuery.cpp
 )
 
 # 链接库到可执行文件

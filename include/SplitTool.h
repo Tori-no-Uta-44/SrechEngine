@@ -8,10 +8,8 @@
 
 class SplitTool {
 public:
-	SplitTool();
-
 	virtual vector<string> cut(const string &sentence) = 0;
 
-	virtual ~SplitTool();
+	virtual ~SplitTool() = default;
 };
 #endif // SPLITTOOL_H

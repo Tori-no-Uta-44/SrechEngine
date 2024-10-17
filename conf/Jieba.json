@@ -1,0 +1,7 @@
+{
+  "DICT_PATH": "/root/a/SearchEngine/include/dict/jieba.dict.utf8",
+  "HMM_PATH": "/root/a/SearchEngine/include/dict/hmm_model.utf8",
+  "USER_DICT_PATH": "/root/a/SearchEngine/include/dict/user.dict.utf8",
+  "IDF_PATH": "/root/a/SearchEngine/include/dict/idf.utf8",
+  "STOP_WORD_PATH": "/root/a/SearchEngine/include/dict/stop_words.utf8"
+}
