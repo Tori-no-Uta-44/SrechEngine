@@ -76,6 +76,10 @@ add_executable(SearchEngine
         src/SearchEngineServer.cpp
         include/WebPageQuery.h
         src/WebPageQuery.cpp
+        include/LRU.h
+        src/LRU.cpp
+        include/SubLRUCache.h
+        src/SubLRUCache.cpp
 )
 
 # 链接库到可执行文件

@@ -9,7 +9,8 @@
 
 SearchEngineServer::SearchEngineServer(int count, CppJieba *jieba):
 	_waitGroup(count),
-	_jieba(jieba) {
+	_jieba(jieba),
+	_cache(32) {
 	_conf = Configuration::getInstance();
 	_dictionary = Dictionary::getInstance();
 
@@ -97,71 +98,141 @@ void SearchEngineServer::loadDictionary() {
 
 //http://121.37.7.68:8081/search
 void SearchEngineServer::loadWeb() {
-    _httpserver.GET("/search", [this](const HttpReq *req, HttpResp *resp, SeriesWork *series) {
-        std::string info = req->query("info");
-        std::string decoded_info = urlDecode(info);
+	_httpserver.GET("/search", [this](const HttpReq *req, HttpResp *resp, SeriesWork *series) {
+		std::string info = req->query("info");
+		std::string decoded_info = urlDecode(info);
 
-        WFRedisTask *redis_task_get = WFTaskFactory::create_redis_task("redis://127.0.0.1", 1, [this, decoded_info, resp, series](WFRedisTask *redis_task) {
-            protocol::RedisResponse *response = redis_task->get_resp();
-            protocol::RedisValue redis_value;
-            int state = redis_task->get_state();
-            int error = redis_task->get_error();
+		// 先查询缓存，缓存未命中则查询 Redis
+		std::string cache_result = getFromCacheOrRedis(decoded_info, resp, series);
+		if (!cache_result.empty()) {
+			// 缓存命中，直接返回结果
+			resp->append_output_body(cache_result);
+			resp->add_header_pair("Content-Type", "application/json");
+		}
+	});
+}
 
-            if (state == WFT_STATE_SUCCESS) {
-                response->get_result(redis_value);
+string SearchEngineServer::getFromCacheOrRedis(const string &key, HttpResp *resp, SeriesWork *series) {
+	// 查询LRU缓存
+	std::string cache_result = _cache.get(key);
+	if (!cache_result.empty()) {
+		return cache_result; // LRU缓存命中
+	}
 
-                if (redis_value.is_nil()) {
-                    // Redis 未命中，执行查询
-                    vector<string> lines = _jieba->cut(decoded_info);
-                    WebPageQuery *web_page_query = WebPageQuery::getInstance();
-                    unordered_map<string, double> termFrequency;
+	// 查询Redis，如果命中返回值，否则执行查询
+	queryRedis(key, resp, series);
+	return "";
+}
 
-                    for (const auto &word : lines) {
-                        if (!word.empty() && word != " " && _conf->getStopWordList().find(word) == _conf->getStopWordList().end()) {
-                            termFrequency[word]++;
-                        }
-                    }
+string SearchEngineServer::getFromCacheOrRedis(const string &key, HttpResp *resp, SeriesWork *series,
+                                               SubLRUCache &subLRU) {
+	string sub_lru_result = subLRU.get(key);
+	if (!sub_lru_result.empty()) {
+		return sub_lru_result;
+	}
+	string lru_result = _cache.get(key);
+	if (!lru_result.empty()) {
+		subLRU.put(key, lru_result);
+		return lru_result;
+	}
+	queryRedis(key, resp, series);
+	return "";
+}
 
-                    web_page_query->getQueryWordsWeightVector(termFrequency);
+void SearchEngineServer::queryRedis(const std::string &key, HttpResp *resp, SeriesWork *series) {
+	WFRedisTask *redis_task_get = WFTaskFactory::create_redis_task("redis://127.0.0.1", 1,
+	[this, key, resp, series](WFRedisTask *redis_task) {
+		protocol::RedisResponse *response = redis_task->get_resp();
+		protocol::RedisValue redis_value;
+		int state = redis_task->get_state();
+		int error = redis_task->get_error();
+		if (state == WFT_STATE_SUCCESS) {
+			response->get_result(redis_value);
+			handleRedisResponse(redis_value, key, resp, series);
+		}else {
+			fprintf(stderr,"Redis task failed. State: %d, Error: %d\n",state, error);
+		}
+	});
 
-                    std::priority_queue<WebPageQuery::Result> results;
-                    web_page_query->executeQuery(termFrequency, &results);
+	redis_task_get->get_req()->set_request("HGET", {"info", key});
+	series->push_back(redis_task_get); // 将查询任务添加到 Series
+}
 
-                    priority_queue<WebPageQuery::Result> cp = results;
-                    vector<string> elements;
-                    while (!cp.empty()) {
-                        elements.push_back(cp.top().docID);
-                        cp.pop();
-                    }
-                    string json_response = web_page_query->createJson(elements, lines);
+void SearchEngineServer::handleRedisResponse(const protocol::RedisValue &redis_value, const std::string &key,
+                                             HttpResp *resp, SeriesWork *series) {
+	if (redis_value.is_nil()) {
+		// Redis未命中，执行查询
+		handleCacheMiss(key, resp, series);
+	}
+	else if (redis_value.is_error()) {
+		fprintf(stderr, "%*s\n", static_cast<int>(redis_value.string_view()->size()),
+		        redis_value.string_view()->c_str());
+	}
+	else if (redis_value.is_string()) {
+		// Redis命中，直接返回
+		std::string redis_result(redis_value.string_view()->data(), redis_value.string_view()->size());
+		_cache.put(key, redis_result); // 更新LRU缓存
+		resp->append_output_body(redis_result);
+		resp->add_header_pair("Content-Type", "application/json");
+	}
+}
 
-                    // 创建 Redis 插入任务
-                    WFRedisTask *redis_task_set = WFTaskFactory::create_redis_task("redis://127.0.0.1", 1, nullptr);
-                    redis_task_set->get_req()->set_request("HSET", {"info", decoded_info, json_response});
-                    series->push_back(redis_task_set);  // 将插入任务添加到 Series
+void SearchEngineServer::handleCacheMiss(const std::string &key, HttpResp *resp, SeriesWork *series) {
+	// 查询逻辑放入单独的函数
+	std::string query_result = executeQuery(key);
 
-                    // 返回查询结果
-                    resp->append_output_body(json_response);
-                    resp->add_header_pair("Content-Type", "application/json");
+	// 将查询结果写入Redis
+	WFRedisTask *redis_task_set = WFTaskFactory::create_redis_task("redis://127.0.0.1", 1, nullptr);
+	redis_task_set->get_req()->set_request("HSET", {"info", key, query_result});
+	series->push_back(redis_task_set); // 将插入任务添加到 Series
 
-                } else if (redis_value.is_error()) {
-                    // Redis 返回错误
-                    fprintf(stderr, "%*s\n", static_cast<int>(redis_value.string_view()->size()),
-                            redis_value.string_view()->c_str());
-                } else if (redis_value.is_string()) {
-                    // Redis 命中，直接返回结果
-                    std::string redis_result(redis_value.string_view()->data(), redis_value.string_view()->size());
-                    resp->append_output_body(redis_result);
-                    resp->add_header_pair("Content-Type", "application/json");
-                }
-            } else {
-                // Redis 任务失败
-                fprintf(stderr, "Redis task failed. State: %d, Error: %d\n", state, error);
-            }
-        });
+	// 更新LRU缓存
+	_cache.put(key, query_result);
 
-        // 设置 Redis 查询请求
-        redis_task_get->get_req()->set_request("HGET", {"info", decoded_info});
-        series->push_back(redis_task_get);  // 将查询任务添加到 Series
-    });
+	// 返回查询结果
+	resp->append_output_body(query_result);
+	resp->add_header_pair("Content-Type", "application/json");
+}
+
+std::string SearchEngineServer::executeQuery(const std::string &decoded_info) {
+	vector<string> lines = _jieba->cut(decoded_info);
+	WebPageQuery *web_page_query = WebPageQuery::getInstance();
+	unordered_map<string, double> termFrequency;
+
+	for (const auto &word : lines) {
+		if (!word.empty() && word != " " && _conf->getStopWordList().find(word) == _conf->getStopWordList().end()) {
+			termFrequency[word]++;
+		}
+	}
+
+	web_page_query->getQueryWordsWeightVector(termFrequency);
+
+	std::priority_queue<WebPageQuery::Result> results;
+	web_page_query->executeQuery(termFrequency, &results);
+
+	priority_queue<WebPageQuery::Result> cp = results;
+	vector<string> elements;
+	while (!cp.empty()) {
+		elements.push_back(cp.top().docID);
+		cp.pop();
+	}
+
+	// 创建 JSON 响应
+	return web_page_query->createJson(elements, lines);
+}
+
+//http://121.37.7.68:8081/searching
+void SearchEngineServer::loadSearchWeb() {
+	_httpserver.GET("/searching", [this](const HttpReq *req, HttpResp *resp, SeriesWork *series) {
+		std::string info = req->query("info");
+		std::string decoded_info = urlDecode(info);
+
+		// 先查询缓存，缓存未命中则查询 Redis
+		std::string cache_result = getFromCacheOrRedis(decoded_info, resp, series);
+		if (!cache_result.empty()) {
+			// 缓存命中，直接返回结果
+			resp->append_output_body(cache_result);
+			resp->add_header_pair("Content-Type", "application/json");
+		}
+	});
 }
