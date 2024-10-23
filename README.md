@@ -12,5 +12,10 @@
 1. 在项目根目录下创建构建目录并进入：
    ```bash
    mkdir build && cd build
-   
-2. 
+   cmake ..
+   make
+2. 进入之后
+   ```bash
+   cmake ..
+   make
+3. 所有的路径更改为自己的
